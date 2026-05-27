@@ -1,0 +1,81 @@
+version: 1
+
+app:
+  name: hydracast
+  timezone: America/Denver
+
+storage:
+  database: /data/hydracast.db
+  work_dir: /data/work
+  cache_dir: /data/cache
+
+secrets:
+  provider: openbao
+
+  openbao:
+    address: "http://openbao:8200"
+    namespace: ""
+    mount: "kv"
+    token_file: "/data/openbao-token"
+    app_path: "hydracast"
+    timeout: 5s
+
+  fallback:
+    provider: files
+    enabled: true
+    root: "/data/secrets"
+
+limits:
+  max_concurrent_jobs: 1
+  max_items_per_run: 3
+  max_working_bytes: 5000MB
+  max_media_duration: 4h
+  keep_successful_media: false
+  keep_failed_media: false
+  job_event_retention: 1000
+
+downloaders:
+  yt_dlp:
+    binary: /usr/local/bin/yt-dlp
+    cookies_ref: "secret://openbao/kv/hydracast/facebook/cookies"
+    output_template: "/data/work/%(extractor)s-%(id)s.%(ext)s"
+    format: "bv*+ba/b"
+
+sources:
+  - name: dkmc-facebook
+    type: facebook_page_videos
+    url: "https://www.facebook.com/DKMCYoga/videos"
+    downloader: yt_dlp
+    enabled: true
+
+transforms:
+  - name: youtube-default
+    type: ffmpeg
+    enabled: true
+    preset: faststart_mp4
+    args:
+      - "-movflags"
+      - "+faststart"
+
+destinations:
+  - name: dkmc-youtube
+    type: youtube
+    enabled: true
+    client_secret_ref: "secret://openbao/kv/hydracast/youtube/client"
+    token_ref: "secret://openbao/kv/hydracast/youtube/token"
+    privacy: public
+    category_id: "27"
+
+  - name: dkmc-facebook-page
+    type: facebook_page
+    enabled: false
+    page_id: "YOUR_PAGE_ID"
+    page_token_ref: "secret://openbao/kv/hydracast/facebook/page-token"
+
+routes:
+  - name: facebook-to-youtube
+    source: dkmc-facebook
+    transforms:
+      - youtube-default
+    destinations:
+      - dkmc-youtube

@@ -1,0 +1,15 @@
+services:
+  hydracast:
+    image: ghcr.io/squoyster/hydracast:latest
+    build: .
+    volumes:
+      - ./data:/data
+    environment:
+      - TZ=America/Denver
+      - BAO_ADDR=http://openbao:8200
+    networks:
+      - hydracast
+
+networks:
+  hydracast:
+    external: true

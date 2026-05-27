@@ -1,0 +1,14 @@
+[Unit]
+Description=HydraCast scheduled sync
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/hydracast
+ExecStart=/usr/bin/podman run --rm \
+  --name hydracast-sync \
+  --network hydracast-net \
+  -v /opt/hydracast/data:/data:Z \
+  ghcr.io/squoyster/hydracast:latest \
+  sync --config /data/config.yaml
