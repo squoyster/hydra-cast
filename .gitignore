@@ -1,7 +1,7 @@
 # If you prefer the allow list template instead of the deny list, see community template:
 # https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
 #
-# Binaries for programs and plugins
+pi-tool-rescue.log
 *.exe
 *.exe~
 *.dll
@@ -31,6 +31,6 @@ go.work.sum
 # .idea/
 # .vscode/
 
-# Tooling
+# Logs
 .taskforge/
 logs/
