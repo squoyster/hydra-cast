@@ -14,7 +14,7 @@ Process-level file lock to prevent overlapping scheduled runs. Backed by `flock(
 ## Local Contracts
 
 ```dox
-R1 lock_path := /data/hydracast.lock. (root R214)
+R1 lock_path := --lock-file flag value (default /data/hydracast.lock, root R214); bound in cmd/hydracast, passed to lock.New.
 R2 TryLock := open(O_CREAT|O_RDWR|O_CLOEXEC) → flock(LOCK_EX|LOCK_NB) → write pid.
 R3 EWOULDBLOCK -> check isStale; stale(pid gone) -> os.Remove ∧ retry TryLock; ¬stale -> return "another instance is running".
 R4 caller_policy := lock_active -> exit(0); lock_unacquirable -> record_event ∧ exit(0). (root R215)

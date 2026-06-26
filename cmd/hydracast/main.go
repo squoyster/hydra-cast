@@ -16,6 +16,7 @@ import (
 
 var (
 	configPath string
+	lockPath   string
 	dryRun     bool
 	jsonOutput bool
 )
@@ -27,6 +28,7 @@ func main() {
 	}
 
 	rootCmd.PersistentFlags().StringVar(&configPath, "config", "/data/config.yaml", "config file path")
+	rootCmd.PersistentFlags().StringVar(&lockPath, "lock-file", "/data/hydracast.lock", "lock file path to prevent overlapping runs")
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "show what would happen without making changes")
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "output in JSON format")
 
@@ -71,7 +73,6 @@ func syncCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
-			lockPath := "/data/hydracast.lock"
 			flock := lock.New(lockPath)
 
 			if err := flock.TryLock(); err != nil {
@@ -258,7 +259,6 @@ func retryCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
-			lockPath := "/data/hydracast.lock"
 			flock := lock.New(lockPath)
 
 			if err := flock.TryLock(); err != nil {
@@ -379,7 +379,6 @@ func scrapeReelsCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
-			lockPath := "/data/hydracast.lock"
 			flock := lock.New(lockPath)
 
 			if err := flock.TryLock(); err != nil {

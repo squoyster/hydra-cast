@@ -119,7 +119,7 @@ R210 secret_value -> F log ∧ F store(SQLite) ∧ F write_to_disk.
 R211 dry_run_output ∧ job_events -> F include(secret_values).
 R212 may_log := {secret_reference_path, found_status, redacted_fingerprints(sha256:abcd1234...)}.
 R213 media_files := ephemeral; M delete(after_successful_publish) by default.
-R214 file_lock := /data/hydracast.lock; purpose := prevent_overlapping_scheduled_runs.
+R214 file_lock := /data/hydracast.lock (default; overridable via --lock-file flag); purpose := prevent_overlapping_scheduled_runs.
 R215 lock_active -> exit(0). lock_stale -> M remove ∧ continue. lock_unacquirable -> M record_event ∧ exit(0).
 R216 runtime_data -> M live_on(/data_volume).
 R217 config_path := /data/config.yaml. db_path := /data/hydracast.db.

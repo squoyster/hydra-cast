@@ -15,9 +15,9 @@ CLI entry point. Wires Cobra subcommands to `internal/app` orchestrators. Owns f
 ## Local Contracts
 
 ```dox
-R1 commands := {sync, validate, scan, jobs, log, retry, auth youtube, secrets check}.
-R2 persistent_flags := {--config(default /data/config.yaml), --dry-run, --json}.
-R3 sync ∧ retry -> M acquire(/data/hydracast.lock) via internal/lock; lock_active -> exit(0).
+R1 commands := {sync, validate, scan, jobs, log, retry, auth youtube, secrets check, scrape-reels}.
+R2 persistent_flags := {--config(default /data/config.yaml), --lock-file(default /data/hydracast.lock), --dry-run, --json}.
+R3 sync ∧ retry ∧ scrape-reels -> M acquire(--lock-file) via internal/lock; lock_active -> exit(0).
 R4 config_invalid -> exit(1).
 R5 store_open ∨ migrate_fail -> propagate(nonzero).
 R6 dependencies := {app, config, joblog, lock, secrets, store}; F import(download, transform, publish, source) directly — they belong to app layer.
