@@ -29,7 +29,7 @@ func RunSync(ctx context.Context, cfg *config.Config, db *store.Store, resolver 
 		component.Warn("failed to cleanup stale files", "error", err)
 	}
 
-	if err := media.EnforceMaxWorkingBytes(cfg.Storage.WorkDir, cfg.Limits.MaxWorkingBytes); err != nil {
+	if err := media.EnforceMaxWorkingBytes(cfg.Storage.WorkDir, int64(cfg.Limits.MaxWorkingBytes)); err != nil {
 		component.Warn("failed to enforce max working bytes", "error", err)
 	}
 
@@ -51,7 +51,7 @@ func RunSync(ctx context.Context, cfg *config.Config, db *store.Store, resolver 
 			break
 		}
 
-		if err := processItem(ctx, cfg, db, item, logger); err != nil {
+		if err := ProcessItem(ctx, cfg, db, item, logger); err != nil {
 			component.Error("item failed", "item", item.Title, "error", err)
 		} else {
 			processed++
@@ -122,7 +122,7 @@ func scanSources(ctx context.Context, cfg *config.Config, db *store.Store, resol
 	return allItems, nil
 }
 
-func processItem(ctx context.Context, cfg *config.Config, db *store.Store, item source.MediaItem, logger *joblog.Logger) error {
+func ProcessItem(ctx context.Context, cfg *config.Config, db *store.Store, item source.MediaItem, logger *joblog.Logger) error {
 	component := logger.WithComponent("sync")
 
 	component.Info("processing item", "title", item.Title)

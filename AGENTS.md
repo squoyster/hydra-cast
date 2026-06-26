@@ -33,6 +33,7 @@ R001 global | new_agent_directive(x) -> M encode_as(Dir) ∧ Pref(dox_notation,p
 R002 global | acting_on_directive(x) -> M parse(x) ∧ classify(x,{invariant,precondition,postcondition,permission,prohibition,preference,exception}) ∧ encode(x,dox).
 R003 global | report(T) -> S include(assumptions ∧ selected_rules ∧ actions_taken ∧ verification_results ∧ unresolved_conflicts?).
 R004 global | reasoning_trace -> F expose_long_chain_of_thought ∧ Pref(compact_rule_trace,deliberation_prose).
+R005 global | re_deliberated(D,¬new_info,n≥2) -> M commit(first_compliant(D)) ∧ F re_deliberate(D); first_compliant(D):=first option passing all rules; tiebreak:=action≻inaction,concrete≻abstract,system_suggested≻self_generated; axiom:cost(indecision)>cost(suboptimal_compliant_choice).
 ```
 
 ## DOX Authority
@@ -77,6 +78,10 @@ R050 docs -> M concise ∧ current ∧ operational ∧ stable_contracts_only ∧
 R051 docs -> M broad_rules_in_parent ∧ concrete_details_in_child ∧ direct_bullets ∧ explicit_names.
 R052 docs -> F duplicate_rules_unless_scope_needs_local_copy; M trim(obvious∨repeated∨misplaced∨obsolete_warning).
 R053 closeout(T) -> M recheck(Δ,D(Δ)) ∧ update(nearest_docs∪affected_parents∪affected_children) ∧ refresh(child_indices) ∧ delete(stale∨contradictory) ∧ run(existing_verification_if_relevant) ∧ report(unchanged_docs,reason).
+R053a closeout_signals(T) := any_emitted({commit,push,scp,rsync,cp_to_remote,build_for_deploy,deploy,PR_create,"done","shipped","deployed"}) ∨ any_file_edit(Δ).
+R053b closeout_signals(T) -> M emit_block(`closeout`,{files_touched:[paths],dox_triggers_hit:[R-ids],dox_updated:[{path,status}],reason_if_skipped:string}).
+R053c closeout_block -> M precede(final_prose) ∧ F omit ∧ F bury_in_summary.
+R053d conflict(mode_output_rule,R053b) -> R053b ≻ mode_output_rule; closeout_block := structured_artifact,¬prose; mode_rules govern prose_only.
 R054 response -> M terse ∧ act_then_report_briefly ∧ F restate_obvious_task ∧ F excessive_deliberation_prose.
 R055 nontrivial(T) -> M plan:=ordered_steps(T) ∧ execute_in_order(plan) ∧ verify(each_step_before_next).
 R056 all -> M correctness>speed ∧ read_before_edit ∧ confirm_assumptions ∧ run_gates ∧ double_check(commands∧paths).

@@ -3,10 +3,73 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
+
+// Bytes is an int64 that unmarshals from human size strings like "5000MB",
+// "1.5GB", or a bare integer. Units use binary multipliers (MB = 1024*1024)
+// to match disk-size conventions used elsewhere in the codebase.
+type Bytes int64
+
+func (b *Bytes) UnmarshalYAML(value *yaml.Node) error {
+	// Bare integer.
+	var n int64
+	if err := value.Decode(&n); err == nil {
+		*b = Bytes(n)
+		return nil
+	}
+	var s string
+	if err := value.Decode(&s); err != nil {
+		return fmt.Errorf("%s: expected integer or size string, got %q", value.Value, value.Value)
+	}
+	parsed, err := ParseBytes(s)
+	if err != nil {
+		return fmt.Errorf("%s: %w", value.Value, err)
+	}
+	*b = Bytes(parsed)
+	return nil
+}
+
+var byteUnits = map[string]int64{
+	"": 1, "B": 1,
+	"K": 1024, "KB": 1024, "KIB": 1024,
+	"M": 1024 * 1024, "MB": 1024 * 1024, "MIB": 1024 * 1024,
+	"G": 1024 * 1024 * 1024, "GB": 1024 * 1024 * 1024, "GIB": 1024 * 1024 * 1024,
+	"T": 1024 * 1024 * 1024 * 1024, "TB": 1024 * 1024 * 1024 * 1024, "TIB": 1024 * 1024 * 1024 * 1024,
+}
+
+func ParseBytes(s string) (int64, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, nil
+	}
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return n, nil
+	}
+	i := len(s)
+	for i > 0 && !isByteDigitOrDot(s[i-1]) {
+		i--
+	}
+	numStr := s[:i]
+	unit := strings.ToUpper(strings.TrimSpace(s[i:]))
+	mult, ok := byteUnits[unit]
+	if !ok {
+		return 0, fmt.Errorf("unknown size unit %q in %q", unit, s)
+	}
+	num, err := strconv.ParseFloat(numStr, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid size %q: %w", s, err)
+	}
+	return int64(num * float64(mult)), nil
+}
+
+func isByteDigitOrDot(r byte) bool {
+	return (r >= '0' && r <= '9') || r == '.'
+}
 
 type Config struct {
 	Version     int         `yaml:"version"`
@@ -56,7 +119,7 @@ type FallbackConfig struct {
 type LimitsConfig struct {
 	MaxConcurrentJobs  int           `yaml:"max_concurrent_jobs"`
 	MaxItemsPerRun     int           `yaml:"max_items_per_run"`
-	MaxWorkingBytes    int64         `yaml:"max_working_bytes"`
+	MaxWorkingBytes    Bytes         `yaml:"max_working_bytes"`
 	MaxMediaDuration   time.Duration `yaml:"max_media_duration"`
 	KeepSuccessfulMedia bool         `yaml:"keep_successful_media"`
 	KeepFailedMedia    bool          `yaml:"keep_failed_media"`
@@ -161,7 +224,7 @@ func ApplyDefaults(cfg *Config) {
 		cfg.Limits.MaxItemsPerRun = 3
 	}
 	if cfg.Limits.MaxWorkingBytes == 0 {
-		cfg.Limits.MaxWorkingBytes = 5000 * 1024 * 1024 // 5000MB
+		cfg.Limits.MaxWorkingBytes = Bytes(5000 * 1024 * 1024) // 5000MB
 	}
 	if cfg.Limits.MaxMediaDuration == 0 {
 		cfg.Limits.MaxMediaDuration = 4 * time.Hour

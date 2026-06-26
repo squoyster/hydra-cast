@@ -6,6 +6,50 @@ import (
 	"testing"
 )
 
+func TestParseBytes(t *testing.T) {
+	tests := []struct {
+		in   string
+		want int64
+	}{
+		{"5000MB", 5000 * 1024 * 1024},
+		{"1GB", 1024 * 1024 * 1024},
+		{"1.5GB", int64(1.5 * 1024 * 1024 * 1024)},
+		{"1024", 1024},
+		{"", 0},
+		{"512MiB", 512 * 1024 * 1024},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			got, err := ParseBytes(tt.in)
+			if err != nil {
+				t.Fatalf("ParseBytes(%q) error: %v", tt.in, err)
+			}
+			if got != tt.want {
+				t.Errorf("ParseBytes(%q) = %d, want %d", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadConfigMaxWorkingBytes(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := `version: 1
+limits:
+  max_working_bytes: 5000MB
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if want := int64(5000 * 1024 * 1024); int64(cfg.Limits.MaxWorkingBytes) != want {
+		t.Errorf("MaxWorkingBytes = %d, want %d", cfg.Limits.MaxWorkingBytes, want)
+	}
+}
+
 func TestLoadConfig(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")

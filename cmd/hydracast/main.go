@@ -38,6 +38,7 @@ func main() {
 	rootCmd.AddCommand(retryCmd())
 	rootCmd.AddCommand(authCmd())
 	rootCmd.AddCommand(secretsCmd())
+	rootCmd.AddCommand(scrapeReelsCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -355,5 +356,63 @@ func secretsCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(checkCmd)
+	return cmd
+}
+
+func scrapeReelsCmd() *cobra.Command {
+	var url string
+	var sourceName string
+
+	cmd := &cobra.Command{
+		Use:   "scrape-reels",
+		Short: "Scrape Facebook reel URLs from a page, download via yt-dlp, publish to configured destinations (unauthenticated)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+
+			if errs := config.Validate(cfg); len(errs) > 0 {
+				for _, e := range errs {
+					cmd.PrintErrf("config error: %v\n", e)
+				}
+				os.Exit(1)
+			}
+
+			lockPath := "/data/hydracast.lock"
+			flock := lock.New(lockPath)
+
+			if err := flock.TryLock(); err != nil {
+				cmd.PrintErrf("lock: %v\n", err)
+				os.Exit(0)
+			}
+			defer flock.Unlock()
+
+			logger := joblog.New()
+
+			db, err := store.New(cfg.Storage.Database)
+			if err != nil {
+				return fmt.Errorf("open store: %w", err)
+			}
+			defer db.Close()
+
+			if err := db.Migrate(); err != nil {
+				return fmt.Errorf("migrate: %w", err)
+			}
+
+			opts := app.ScrapeReelsOptions{
+				URL:        url,
+				SourceName: sourceName,
+			}
+
+			return app.RunScrapeReels(cmd.Context(), cfg, db, opts, logger, dryRun)
+		},
+	}
+
+	cmd.Flags().StringVar(&url, "url", "", "Facebook page URL to scrape (required)")
+	cmd.Flags().StringVar(&sourceName, "source", "", "configured source name whose route defines destinations (required)")
+	_ = cmd.MarkFlagRequired("url")
+	_ = cmd.MarkFlagRequired("source")
+
 	return cmd
 }
