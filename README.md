@@ -364,6 +364,8 @@ Volume contents:
 /opt/hydracast/data
 ├── config.yaml
 ├── hydracast.db
+├── auth/
+│   └── role_id_secret_id   # AppRole creds (role_id=.., secret_id=..), 0600
 ├── openbao-token
 ├── secrets/
 │   └── dev-only-fallback-files/
@@ -402,6 +404,8 @@ secrets:
     address: "http://openbao:8200"
     namespace: ""
     mount: "kv"
+    auth_path: "approle"
+    approle_file: "/data/auth/role_id_secret_id"
     token_file: "/data/openbao-token"
     app_path: "hydracast"
     timeout: 5s
@@ -496,6 +500,15 @@ kv/hydracast/facebook/cookies
   cookies_txt
 ```
 
+A config ref selects one field within a secret via `#<field_name>`:
+
+```yaml
+client_id_ref: "secret://openbao/kv/hydracast/youtube/client#client_id"
+client_secret_ref: "secret://openbao/kv/hydracast/youtube/client#client_secret"
+```
+
+Omitting `#key` returns the whole secret: multi-field secrets serialize as `key=value` lines (consumed by the client-secret parser historically); single-field secrets return the raw value.
+
 ### OpenBao Access From Containers
 
 For a VPS deployment, OpenBao can run on the same host or on a private control-plane network.
@@ -528,27 +541,34 @@ HydraCast does not normally need permission to create, update, or delete secrets
 
 ### Token Delivery
 
-Acceptable token delivery methods:
+HydraCast obtains an OpenBao client token using this precedence:
 
 ```text
-/data/openbao-token
-BAO_TOKEN environment variable
-VAULT_TOKEN environment variable, for Vault-compatible tooling
+1. BAO_TOKEN / VAULT_TOKEN env var           (ops override / debugging)
+2. AppRole login  (production default)
+   POST {address}/v1/auth/{auth_path}/login
+   creds file: /data/auth/role_id_secret_id   (role_id=.., secret_id=..)
+3. Static token file /data/openbao-token      (last-resort fallback)
 ```
 
-Preferred for scheduled containers:
+AppRole is the production default. The obtained client token (24h TTL) is
+cached for the duration of a run, so a scheduled sync performs at most one
+AppRole login per run. Env vars and the static token file remain honoured for
+ops/debugging when AppRole creds are absent.
 
-```text
-/opt/hydracast/data/openbao-token → mounted as /data/openbao-token
-```
-
-The token file should be readable only by the deployment user.
-
-Example host permissions:
+Provisioning AppRole creds on the host:
 
 ```bash
-sudo chmod 600 /opt/hydracast/data/openbao-token
+sudo install -d -m 700 /opt/hydracast/data/auth
+sudo tee /opt/hydracast/data/auth/role_id_secret_id >/dev/null <<'EOF'
+role_id=08ab1365-...
+secret_id=4a7e5d7d-...
+EOF
+sudo chmod 600 /opt/hydracast/data/auth/role_id_secret_id
 ```
+
+A static token file is still a valid fallback; readable only by the deployment
+user (`chmod 600 /opt/hydracast/data/openbao-token`).
 
 ### Secret Resolution Rules
 
@@ -613,6 +633,8 @@ secrets:
   openbao:
     address: "http://openbao:8200"
     mount: "kv"
+    auth_path: "approle"
+    approle_file: "/data/auth/role_id_secret_id"
     token_file: "/data/openbao-token"
     app_path: "hydracast"
     timeout: 5s
@@ -656,7 +678,8 @@ destinations:
   - name: dkmc-youtube
     type: youtube
     enabled: true
-    client_secret_ref: "secret://openbao/kv/hydracast/youtube/client"
+    client_id_ref: "secret://openbao/kv/hydracast/youtube/client#client_id"
+    client_secret_ref: "secret://openbao/kv/hydracast/youtube/client#client_secret"
     token_ref: "secret://openbao/kv/hydracast/youtube/token"
     privacy: public
     category_id: "27"

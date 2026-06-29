@@ -9,22 +9,25 @@ Secret resolution. Parses `secret://` references from config and returns the pla
 ## Ownership
 
 - Package: `secrets`.
-- Files: `resolver.go` (`Resolver`, `NewResolver`, `Resolve`, `getOpenBaoToken`, `resolveFileFallback`, `Fingerprint`, `Redact`), `resolver_test.go`.
+- Files: `resolver.go` (`Resolver`, `NewResolver`, `Resolve`, `resolveOpenBao`, `selectField`, `serializeKV`, `resolveFileFallback`, `getOpenBaoToken`, `loginAppRole`, `readAppRoleCreds`, `Fingerprint`, `Redact`), `resolver_test.go`.
 
 ## Local Contracts
 
 ```dox
-R1 ref_format := "secret://" + scheme_path. Currently only "secret://openbao/..." is accepted; other schemes -> error.
+R1 ref_format := "secret://" + scheme_path + optional("#" + key_name). Currently only "secret://openbao/..." is accepted; other schemes -> error.
 R2 resolution_order := explicit_openbao_ref → (openbao_configured? openbao : fallback) → fallback. (root R221)
 R3 openbao_not_configured ∧ fallback_enabled -> resolveFileFallback.
-R4 openbao_token sources := BAO_TOKEN env → VAULT_TOKEN env → OpenBao.TokenFile. (root R223)
-R5 fallback_path := Fallback.Root + "/" + strip("openbao/kv/hydracast/" prefix) from ref.
+R4 openbao_token sources (precedence) := cached_run_token → BAO_TOKEN env → VAULT_TOKEN env → AppRole_login(OpenBao.AppRoleFile, POST {address}/v1/auth/{AuthPath}/login) → static OpenBao.TokenFile. AppRole token cached on Resolver for the run (TTL=24h). (root R223)
+R5 fallback_path := Fallback.Root + "/" + strip("openbao/kv/hydracast/" prefix) from ref. Key selector, if present, parsed from file as "k=v" lines.
 R6 Fingerprint(value) := sha256 first 4 bytes → "sha256:<8 hex>". Safe to log. (root R212)
 R7 Redact(value) := first2 + "****" + last2, or "****" if len<=4. For short display contexts.
 R8 F log ∧ F return(resolved_plaintext) from non-Resolve code paths. (root R210)
+R9 openbao_kv := KV-v2 GET {address}/v1/{mount}/data/{secretPath}, header X-Vault-Token, optional X-Vault-Namespace. Timeout := OpenBao.Timeout.
+R10 key_selector := "#key" on ref → return that one field; absent → serializeKV (single field → raw value; multi field → sorted "k=v\n" lines). The youtube client_id/client_secret are resolved via separate #key refs (app.SetupYouTubeAuth), so serializeKV's multi-field form is unused for those today.
+R11 openbao_request_failure ({net_error, 404, non_200}) ∧ fallback_enabled -> resolveFileFallback.
 ```
 
-Known gap: `resolveOpenBao` returns `"openbao client not yet implemented"` for the configured-and-tokened path — only the file fallback actually returns values today. OpenBao HTTP client integration is pending.
+Assumptions: KV-v2 mount only (no `/data/`-less v1 branch yet). On any OpenBao request failure with fallback enabled, resolution falls back to files so dev keeps working when OpenBao is down.
 
 ## Work Guidance
 

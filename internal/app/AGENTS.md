@@ -33,7 +33,7 @@ Note: `scanSources` currently emits a single placeholder `MediaItem` per enabled
 - `processItem` is the only place download/transform/publish are chained — edit there to change per-item flow.
 - Errors are recorded as `job_events` (level=error, component=sync.*) AND `jobs.error_message`. Keep both in sync.
 - New destination type: add `case` in `processItem` switch + constructor in `internal/publish`.
-- `parseClientSecret` accepts `client_id=..\nclient_secret=..` form OR `id:secret` fallback. Both are parsed, neither is logged.
+- YouTube OAuth creds come from two config refs (`client_id_ref`, `client_secret_ref`) resolved individually via `secrets.Resolver`. Field names live in the ref's `#key` (e.g. `...youtube/client#client_id`); app code holds no hardcoded OpenBao key names. Neither resolved value is logged.
 
 ## Verification
 

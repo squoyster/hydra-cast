@@ -16,6 +16,8 @@ secrets:
     address: "http://openbao:8200"
     namespace: ""
     mount: "kv"
+    auth_path: "approle"
+    approle_file: "/data/auth/role_id_secret_id"
     token_file: "/data/openbao-token"
     app_path: "hydracast"
     timeout: 5s
@@ -61,7 +63,8 @@ destinations:
   - name: dkmc-youtube
     type: youtube
     enabled: true
-    client_secret_ref: "secret://openbao/kv/hydracast/youtube/client"
+    client_id_ref: "secret://openbao/kv/hydracast/youtube/client#client_id"
+    client_secret_ref: "secret://openbao/kv/hydracast/youtube/client#client_secret"
     token_ref: "secret://openbao/kv/hydracast/youtube/token"
     privacy: public
     category_id: "27"

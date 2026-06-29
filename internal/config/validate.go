@@ -128,6 +128,9 @@ func ValidateSecretRefs(cfg *Config) []error {
 	}
 
 	for _, dst := range cfg.Destinations {
+		if dst.ClientIDRef != "" {
+			refs = append(refs, dst.ClientIDRef)
+		}
 		if dst.ClientSecretRef != "" {
 			refs = append(refs, dst.ClientSecretRef)
 		}

@@ -131,10 +131,12 @@ R217 config_path := /data/config.yaml. db_path := /data/hydracast.db.
 /data
 ├── config.yaml
 ├── hydracast.db
-├── openbao-token
-├── secrets/          # dev-only fallback files
-├── cookies/          # facebook.txt (dev fallback)
-├── work/             # temp media files
+├── auth/
+│   └── role_id_secret_id   # AppRole creds: role_id=.., secret_id=.. (0600)
+├── openbao-token           # static token (ops override / last-resort fallback)
+├── secrets/                # dev-only fallback files
+├── cookies/                # facebook.txt (dev fallback)
+├── work/                   # temp media files
 ├── cache/
 └── logs/
 ```
@@ -145,7 +147,7 @@ R217 config_path := /data/config.yaml. db_path := /data/hydracast.db.
 R220 config -> M reference_secrets_symbolically (e.g. secret://openbao/kv/hydracast/youtube/client).
 R221 resolution_order := explicit_openbao_ref → default_openbao_path → file_fallback → env_fallback.
 R222 required_production_secret_unresolvable -> M fail_validation.
-R223 openbao_token_delivery := /data/openbao-token ∨ BAO_TOKEN ∨ VAULT_TOKEN(env).
+R223 openbao_token_delivery (precedence) := cached_run_token → BAO_TOKEN → VAULT_TOKEN(env) → AppRole_login(if /data/auth/role_id_secret_id exists) → static_token_file(/data/openbao-token). AppRole is the production default (role_id TTL=0, secret_id unlimited uses; obtained client token TTL=24h, cached for the run). env + static file are overrides.
 R224 cookie_data -> M materialize_into_temp_files(download_duration_only) ∧ M remove(after).
 ```
 

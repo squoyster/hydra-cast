@@ -72,16 +72,16 @@ func isByteDigitOrDot(r byte) bool {
 }
 
 type Config struct {
-	Version     int         `yaml:"version"`
-	App         AppConfig   `yaml:"app"`
-	Storage     StorageConfig `yaml:"storage"`
-	Secrets     SecretsConfig `yaml:"secrets"`
-	Limits      LimitsConfig  `yaml:"limits"`
-	Downloaders DownloadersConfig `yaml:"downloaders"`
-	Sources     []SourceConfig    `yaml:"sources"`
-	Transforms  []TransformConfig `yaml:"transforms"`
+	Version      int                 `yaml:"version"`
+	App          AppConfig           `yaml:"app"`
+	Storage      StorageConfig       `yaml:"storage"`
+	Secrets      SecretsConfig       `yaml:"secrets"`
+	Limits       LimitsConfig        `yaml:"limits"`
+	Downloaders  DownloadersConfig   `yaml:"downloaders"`
+	Sources      []SourceConfig      `yaml:"sources"`
+	Transforms   []TransformConfig   `yaml:"transforms"`
 	Destinations []DestinationConfig `yaml:"destinations"`
-	Routes      []RouteConfig       `yaml:"routes"`
+	Routes       []RouteConfig       `yaml:"routes"`
 }
 
 type AppConfig struct {
@@ -96,18 +96,20 @@ type StorageConfig struct {
 }
 
 type SecretsConfig struct {
-	Provider string           `yaml:"provider"`
-	OpenBao  OpenBaoConfig    `yaml:"openbao"`
-	Fallback FallbackConfig   `yaml:"fallback"`
+	Provider string         `yaml:"provider"`
+	OpenBao  OpenBaoConfig  `yaml:"openbao"`
+	Fallback FallbackConfig `yaml:"fallback"`
 }
 
 type OpenBaoConfig struct {
-	Address   string        `yaml:"address"`
-	Namespace string        `yaml:"namespace"`
-	Mount     string        `yaml:"mount"`
-	TokenFile string        `yaml:"token_file"`
-	AppPath   string        `yaml:"app_path"`
-	Timeout   time.Duration `yaml:"timeout"`
+	Address     string        `yaml:"address"`
+	Namespace   string        `yaml:"namespace"`
+	Mount       string        `yaml:"mount"`
+	AuthPath    string        `yaml:"auth_path"`
+	AppRoleFile string        `yaml:"approle_file"`
+	TokenFile   string        `yaml:"token_file"`
+	AppPath     string        `yaml:"app_path"`
+	Timeout     time.Duration `yaml:"timeout"`
 }
 
 type FallbackConfig struct {
@@ -117,13 +119,13 @@ type FallbackConfig struct {
 }
 
 type LimitsConfig struct {
-	MaxConcurrentJobs  int           `yaml:"max_concurrent_jobs"`
-	MaxItemsPerRun     int           `yaml:"max_items_per_run"`
-	MaxWorkingBytes    Bytes         `yaml:"max_working_bytes"`
-	MaxMediaDuration   time.Duration `yaml:"max_media_duration"`
-	KeepSuccessfulMedia bool         `yaml:"keep_successful_media"`
-	KeepFailedMedia    bool          `yaml:"keep_failed_media"`
-	JobEventRetention  int           `yaml:"job_event_retention"`
+	MaxConcurrentJobs   int           `yaml:"max_concurrent_jobs"`
+	MaxItemsPerRun      int           `yaml:"max_items_per_run"`
+	MaxWorkingBytes     Bytes         `yaml:"max_working_bytes"`
+	MaxMediaDuration    time.Duration `yaml:"max_media_duration"`
+	KeepSuccessfulMedia bool          `yaml:"keep_successful_media"`
+	KeepFailedMedia     bool          `yaml:"keep_failed_media"`
+	JobEventRetention   int           `yaml:"job_event_retention"`
 }
 
 type DownloadersConfig struct {
@@ -157,6 +159,7 @@ type DestinationConfig struct {
 	Name            string `yaml:"name"`
 	Type            string `yaml:"type"`
 	Enabled         bool   `yaml:"enabled"`
+	ClientIDRef     string `yaml:"client_id_ref"`
 	ClientSecretRef string `yaml:"client_secret_ref"`
 	TokenRef        string `yaml:"token_ref"`
 	Privacy         string `yaml:"privacy"`
@@ -166,9 +169,9 @@ type DestinationConfig struct {
 }
 
 type RouteConfig struct {
-	Name        string   `yaml:"name"`
-	Source      string   `yaml:"source"`
-	Transforms  []string `yaml:"transforms"`
+	Name         string   `yaml:"name"`
+	Source       string   `yaml:"source"`
+	Transforms   []string `yaml:"transforms"`
 	Destinations []string `yaml:"destinations"`
 }
 
@@ -207,6 +210,12 @@ func ApplyDefaults(cfg *Config) {
 	}
 	if cfg.Secrets.OpenBao.Mount == "" {
 		cfg.Secrets.OpenBao.Mount = "kv"
+	}
+	if cfg.Secrets.OpenBao.AuthPath == "" {
+		cfg.Secrets.OpenBao.AuthPath = "approle"
+	}
+	if cfg.Secrets.OpenBao.AppRoleFile == "" {
+		cfg.Secrets.OpenBao.AppRoleFile = "/data/auth/role_id_secret_id"
 	}
 	if cfg.Secrets.OpenBao.TokenFile == "" {
 		cfg.Secrets.OpenBao.TokenFile = "/data/openbao-token"

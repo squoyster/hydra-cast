@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/squoyster/hydracast/internal/config"
 	"github.com/squoyster/hydracast/internal/joblog"
@@ -30,6 +29,9 @@ func SetupYouTubeAuth(ctx context.Context, cfg *config.Config, db *store.Store, 
 		return fmt.Errorf("destination %q not found or not a youtube type", destinationName)
 	}
 
+	if dstCfg.ClientIDRef == "" {
+		return fmt.Errorf("destination %q missing client_id_ref", destinationName)
+	}
 	if dstCfg.ClientSecretRef == "" {
 		return fmt.Errorf("destination %q missing client_secret_ref", destinationName)
 	}
@@ -42,20 +44,23 @@ func SetupYouTubeAuth(ctx context.Context, cfg *config.Config, db *store.Store, 
 
 	if dryRun {
 		fmt.Printf("Would initiate OAuth flow for destination: %s\n", destinationName)
+		fmt.Printf("Client ID ref: %s\n", dstCfg.ClientIDRef)
 		fmt.Printf("Client secret ref: %s\n", dstCfg.ClientSecretRef)
 		fmt.Printf("Token ref: %s\n", dstCfg.TokenRef)
 		return nil
 	}
 
-	clientSecret, err := resolver.Resolve(dstCfg.ClientSecretRef)
+	clientID, err := resolver.Resolve(dstCfg.ClientIDRef)
+	if err != nil {
+		return fmt.Errorf("resolve client id: %w", err)
+	}
+	clientSecretVal, err := resolver.Resolve(dstCfg.ClientSecretRef)
 	if err != nil {
 		return fmt.Errorf("resolve client secret: %w", err)
 	}
 
-	clientID, clientSecretVal := parseClientSecret(clientSecret)
-
 	if clientID == "" || clientSecretVal == "" {
-		return fmt.Errorf("client secret must contain client_id and client_secret")
+		return fmt.Errorf("client_id and client_secret must not be empty")
 	}
 
 	credDir := filepath.Join(cfg.Storage.WorkDir, ".youtube-creds")
@@ -103,29 +108,6 @@ func SetupYouTubeAuth(ctx context.Context, cfg *config.Config, db *store.Store, 
 	}
 
 	return nil
-}
-
-func parseClientSecret(raw string) (clientID, clientSecret string) {
-	lines := strings.Split(raw, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "client_id=") {
-			clientID = strings.TrimPrefix(line, "client_id=")
-		}
-		if strings.HasPrefix(line, "client_secret=") {
-			clientSecret = strings.TrimPrefix(line, "client_secret=")
-		}
-	}
-
-	if clientID == "" {
-		parts := strings.SplitN(raw, ":", 2)
-		if len(parts) == 2 {
-			clientID = strings.TrimSpace(parts[0])
-			clientSecret = strings.TrimSpace(parts[1])
-		}
-	}
-
-	return
 }
 
 func writeClientSecret(path, clientID, clientSecret string) error {
