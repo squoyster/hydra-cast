@@ -196,6 +196,8 @@ func ProcessItem(ctx context.Context, cfg *config.Config, db *store.Store, item 
 	}
 
 	destinations := resolveDestinations(cfg, item.SourceName)
+	publishedCount := 0
+	failedCount := 0
 	for _, dstCfg := range destinations {
 		component.Info("publishing", "destination", dstCfg.Name, "type", dstCfg.Type)
 		_ = db.RecordEvent(ctx, &jobID, "info", "sync.publish", "publishing to destination", fmt.Sprintf(`{"destination":%q}`, dstCfg.Name))
@@ -215,20 +217,30 @@ func ProcessItem(ctx context.Context, cfg *config.Config, db *store.Store, item 
 		if err != nil {
 			_ = db.RecordEvent(ctx, &jobID, "error", "sync.publish", "publish failed", fmt.Sprintf(`{"destination":%q,"error":%q}`, dstCfg.Name, err.Error()))
 			component.Error("publish failed", "destination", dstCfg.Name, "error", err)
+			failedCount++
 			continue
 		}
 
 		if result.Error != nil {
 			_ = db.RecordEvent(ctx, &jobID, "error", "sync.publish", "publish failed", fmt.Sprintf(`{"destination":%q,"error":%q}`, dstCfg.Name, result.Error.Error()))
 			component.Error("publish failed", "destination", dstCfg.Name, "error", result.Error)
+			failedCount++
 			continue
 		}
 
 		component.Info("published", "destination", dstCfg.Name, "remote_id", result.RemoteID, "url", result.RemoteURL)
 		_ = db.RecordEvent(ctx, &jobID, "info", "sync.publish", "published successfully", fmt.Sprintf(`{"destination":%q,"remote_id":%q,"url":%q}`, dstCfg.Name, result.RemoteID, result.RemoteURL))
+		publishedCount++
 	}
 
-	_ = db.UpdateJobStatus(ctx, jobID, "published", "")
+	switch {
+	case failedCount > 0:
+		_ = db.UpdateJobStatus(ctx, jobID, "failed", fmt.Sprintf("publish failed: %d/%d destination(s)", failedCount, publishedCount+failedCount))
+	case publishedCount > 0:
+		_ = db.UpdateJobStatus(ctx, jobID, "published", "")
+	default:
+		_ = db.UpdateJobStatus(ctx, jobID, "skipped", "no destinations published")
+	}
 
 	if !cfg.Limits.KeepSuccessfulMedia {
 		component.Info("cleaning up media", "path", localMedia.Path)
@@ -237,6 +249,9 @@ func ProcessItem(ctx context.Context, cfg *config.Config, db *store.Store, item 
 		}
 	}
 
+	if failedCount > 0 {
+		return fmt.Errorf("publish failed: %d/%d destination(s)", failedCount, publishedCount+failedCount)
+	}
 	return nil
 }
 

@@ -16,13 +16,13 @@ Application orchestration. Runs the pipeline (scan → download → transform �
 ```dox
 R1 entry_points := {RunSync, RunScan, RetryFailed, SetupYouTubeAuth, ListJobs, ListEvents, CheckSecrets}.
 R2 RunSync sequence := cleanup_stale ∧ enforce_max_bytes → scanSources (upsert new items, capture DB id onto item.ID, drain intake file) → [dry_run: showDryRunPlan] ∨ list_pending_items(MaxItemsPerRun) → per_item(processItem) → PruneEvents. The DB is the durable work queue; RunSync drains the oldest never-attempted items, NOT the just-scanned slice.
-R3 processItem := CreateJob(item.ID, download_pending) → download → per_transform(transform, delete_prior) → per_destination(publish) → UpdateJobStatus(published) → [¬keep_successful: DeleteMedia].
+R3 processItem := CreateJob(item.ID, download_pending) → download → per_transform(transform, delete_prior) → per_destination(publish, tally published/failed) → UpdateJobStatus(failed ∨ published ∨ skipped) → [¬keep_successful: DeleteMedia]. Status never masks a failure as success: any dest error/result.Error → failed; zero dests published → skipped; else published. Returns error on failure so RunSync logs it (root R260).
 R4 item_failure -> M log ∧ continue; F abort_sibling_items. (root R260)
 R5 max_items_per_run := the LIMIT passed to ListPendingItems; each run drains that many never-attempted items from the DB queue. Overflow stays pending for a later run (not orphaned); the intake file is drained on upsert regardless.
 R6 route_resolution := resolveTransforms ∧ resolveDestinations match cfg.Routes by route.Source == item.SourceName; honor *.Enabled == false.
 R7 dry_run -> F download ∧ F publish ∧ F db_mutation beyond UpsertMediaItem(scan path) ∧ F lock_bypass. (root R280/R281; see also scan path note below)
 R8 publish.Plugin selection := switch dstCfg.Type ∈ {youtube, facebook_page}; unknown_type -> Warn ∧ skip.
-R9 job_status_terminal_values := {published, failed}; transient values per root R250.
+R9 job_status_terminal_values := {published, failed, skipped}; transient values per root R250.
 R10 ListJobs/ListEvents -> M honor --json flag ∧ --last N ∧ --failed filter.
 ```
 
