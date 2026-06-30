@@ -388,6 +388,7 @@ func scrapeReelsCmd() *cobra.Command {
 			defer flock.Unlock()
 
 			logger := joblog.New()
+			resolver := secrets.NewResolver(cfg.Secrets)
 
 			db, err := store.New(cfg.Storage.Database)
 			if err != nil {
@@ -404,7 +405,7 @@ func scrapeReelsCmd() *cobra.Command {
 				SourceName: sourceName,
 			}
 
-			return app.RunScrapeReels(cmd.Context(), cfg, db, opts, logger, dryRun)
+			return app.RunScrapeReels(cmd.Context(), cfg, db, resolver, opts, logger, dryRun)
 		},
 	}
 

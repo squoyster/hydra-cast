@@ -11,6 +11,7 @@ import (
 
 	"github.com/squoyster/hydracast/internal/config"
 	"github.com/squoyster/hydracast/internal/joblog"
+	"github.com/squoyster/hydracast/internal/secrets"
 	"github.com/squoyster/hydracast/internal/source"
 	"github.com/squoyster/hydracast/internal/store"
 )
@@ -24,7 +25,7 @@ type ScrapeReelsOptions struct {
 	SourceName string
 }
 
-func RunScrapeReels(ctx context.Context, cfg *config.Config, db *store.Store, opts ScrapeReelsOptions, logger *joblog.Logger, dryRun bool) error {
+func RunScrapeReels(ctx context.Context, cfg *config.Config, db *store.Store, resolver *secrets.Resolver, opts ScrapeReelsOptions, logger *joblog.Logger, dryRun bool) error {
 	component := logger.WithComponent("scrape-reels")
 
 	if !routeExists(cfg, opts.SourceName) {
@@ -79,7 +80,7 @@ func RunScrapeReels(ctx context.Context, cfg *config.Config, db *store.Store, op
 			item.ID = id
 		}
 
-		if err := ProcessItem(ctx, cfg, db, item, logger); err != nil {
+		if err := ProcessItem(ctx, cfg, db, resolver, item, logger); err != nil {
 			component.Error("item failed", "url", u, "error", err)
 			continue
 		}

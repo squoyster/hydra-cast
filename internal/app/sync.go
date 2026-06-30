@@ -57,7 +57,7 @@ func RunSync(ctx context.Context, cfg *config.Config, db *store.Store, resolver 
 	component.Info("processing pending items", "count", len(pending))
 
 	for _, item := range pending {
-		if err := ProcessItem(ctx, cfg, db, item, logger); err != nil {
+		if err := ProcessItem(ctx, cfg, db, resolver, item, logger); err != nil {
 			component.Error("item failed", "item", item.Title, "error", err)
 		}
 	}
@@ -152,7 +152,7 @@ func scanSource(ctx context.Context, srcCfg config.SourceConfig) ([]source.Media
 	}
 }
 
-func ProcessItem(ctx context.Context, cfg *config.Config, db *store.Store, item source.MediaItem, logger *joblog.Logger) error {
+func ProcessItem(ctx context.Context, cfg *config.Config, db *store.Store, resolver *secrets.Resolver, item source.MediaItem, logger *joblog.Logger) error {
 	component := logger.WithComponent("sync")
 
 	component.Info("processing item", "title", item.Title)
@@ -205,9 +205,9 @@ func ProcessItem(ctx context.Context, cfg *config.Config, db *store.Store, item 
 		var pub publish.Plugin
 		switch dstCfg.Type {
 		case "youtube":
-			pub = publish.NewYouTube(dstCfg, cfg.Downloaders.YtDlp.Binary)
+			pub = publish.NewYouTube(dstCfg, resolver)
 		case "facebook_page":
-			pub = publish.NewFacebookPage(dstCfg, cfg.Downloaders.YtDlp.Binary)
+			pub = publish.NewFacebookPage(dstCfg, resolver)
 		default:
 			component.Warn("unknown destination type, skipping", "type", dstCfg.Type)
 			continue

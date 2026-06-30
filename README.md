@@ -670,9 +670,6 @@ transforms:
     type: ffmpeg
     enabled: true
     preset: faststart_mp4
-    args:
-      - "-movflags"
-      - "+faststart"
 
 destinations:
   - name: dkmc-youtube

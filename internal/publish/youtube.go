@@ -4,99 +4,95 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
+
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
+	"google.golang.org/api/option"
+	"google.golang.org/api/youtube/v3"
 
 	"github.com/squoyster/hydracast/internal/config"
 	"github.com/squoyster/hydracast/internal/download"
+	"github.com/squoyster/hydracast/internal/secrets"
 	"github.com/squoyster/hydracast/internal/source"
 )
 
+// YouTube uploads via the YouTube Data API v3 videos.insert (resumable upload),
+// authenticating with an OAuth2 refresh token resolved from the secrets store.
 type YouTube struct {
-	cfg       config.DestinationConfig
-	ytDlpPath string
+	cfg      config.DestinationConfig
+	resolver *secrets.Resolver
 }
 
-func NewYouTube(cfg config.DestinationConfig, ytDlpPath string) *YouTube {
-	return &YouTube{
-		cfg:       cfg,
-		ytDlpPath: ytDlpPath,
-	}
+func NewYouTube(cfg config.DestinationConfig, resolver *secrets.Resolver) *YouTube {
+	return &YouTube{cfg: cfg, resolver: resolver}
 }
 
-func (y *YouTube) Name() string {
-	return y.cfg.Name
-}
-
-func (y *YouTube) Type() string {
-	return "youtube"
-}
+func (y *YouTube) Name() string { return y.cfg.Name }
+func (y *YouTube) Type() string { return "youtube" }
 
 func (y *YouTube) Publish(ctx context.Context, item source.MediaItem, media *download.LocalMedia) (*PublishResult, error) {
-	if y.ytDlpPath == "" {
-		y.ytDlpPath = "/usr/local/bin/yt-dlp"
+	clientID, err := y.resolver.Resolve(y.cfg.ClientIDRef)
+	if err != nil {
+		return &PublishResult{Status: "failed", Error: fmt.Errorf("resolve client_id: %w", err)}, nil
+	}
+	clientSecret, err := y.resolver.Resolve(y.cfg.ClientSecretRef)
+	if err != nil {
+		return &PublishResult{Status: "failed", Error: fmt.Errorf("resolve client_secret: %w", err)}, nil
+	}
+	// token_ref points at a multi-field secret; #refresh_token selects the field.
+	refreshToken, err := y.resolver.Resolve(y.cfg.TokenRef + "#refresh_token")
+	if err != nil {
+		return &PublishResult{Status: "failed", Error: fmt.Errorf("resolve refresh_token: %w", err)}, nil
 	}
 
-	if _, err := os.Stat(y.ytDlpPath); err != nil {
-		return nil, fmt.Errorf("yt-dlp binary not found at %s: %w", y.ytDlpPath, err)
+	oauth2Cfg := &oauth2.Config{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		Endpoint:     google.Endpoint,
+		Scopes:       []string{youtube.YoutubeUploadScope},
+	}
+	// oauth2Cfg.Client auto-refreshes the access token using the refresh token.
+	httpClient := oauth2Cfg.Client(ctx, &oauth2.Token{RefreshToken: refreshToken})
+
+	svc, err := youtube.NewService(ctx, option.WithHTTPClient(httpClient))
+	if err != nil {
+		return &PublishResult{Status: "failed", Error: fmt.Errorf("build youtube service: %w", err)}, nil
 	}
 
 	title := item.Title
 	if title == "" {
 		title = filepath.Base(media.Path)
 	}
-
-	description := fmt.Sprintf("Published via HydraCast from %s", item.SourceName)
-
-	args := []string{
-		"--no-playlist",
-		"--title", title,
-		"--description", description,
+	privacy := y.cfg.Privacy
+	if privacy == "" {
+		privacy = "public"
 	}
 
-	if y.cfg.Privacy != "" {
-		args = append(args, "--metadata-from-title", fmt.Sprintf("privacy=%s", y.cfg.Privacy))
+	video := &youtube.Video{
+		Snippet: &youtube.VideoSnippet{
+			Title:       title,
+			Description: fmt.Sprintf("Published via HydraCast from %s", item.SourceName),
+			CategoryId:  y.cfg.CategoryID,
+		},
+		Status: &youtube.VideoStatus{PrivacyStatus: privacy},
 	}
 
-	if y.cfg.CategoryID != "" {
-		args = append(args, "--metadata-from-title", fmt.Sprintf("category=%s", y.cfg.CategoryID))
-	}
-
-	args = append(args, media.Path)
-
-	cmd := exec.CommandContext(ctx, y.ytDlpPath, args...)
-	output, err := cmd.CombinedOutput()
+	f, err := os.Open(media.Path)
 	if err != nil {
-		return &PublishResult{
-			Status: "failed",
-			Error:  fmt.Errorf("yt-dlp upload failed: %w\n%s", err, string(output)),
-		}, nil
+		return &PublishResult{Status: "failed", Error: fmt.Errorf("open media: %w", err)}, nil
 	}
+	defer f.Close()
 
-	videoID := extractVideoID(string(output))
+	// Media() triggers a resumable upload for the file; the client chunks-retries it.
+	resp, err := svc.Videos.Insert([]string{"snippet", "status"}, video).Media(f).Do()
+	if err != nil {
+		return &PublishResult{Status: "failed", Error: fmt.Errorf("videos.insert: %w", err)}, nil
+	}
 
 	return &PublishResult{
-		RemoteID:  videoID,
-		RemoteURL: fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID),
+		RemoteID:  resp.Id,
+		RemoteURL: fmt.Sprintf("https://www.youtube.com/watch?v=%s", resp.Id),
 		Status:    "published",
 	}, nil
-}
-
-func extractVideoID(output string) string {
-	lines := strings.Split(output, "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "youtube.com/watch?v=") {
-			idx := strings.Index(line, "watch?v=")
-			if idx != -1 {
-				id := line[idx+8:]
-				id = strings.Split(id, "&")[0]
-				id = strings.TrimSpace(id)
-				if len(id) == 11 {
-					return id
-				}
-			}
-		}
-	}
-	return ""
 }
