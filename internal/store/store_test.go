@@ -193,3 +193,42 @@ func TestUpsertMediaItemWithPublishedAt(t *testing.T) {
 		t.Error("UpsertMediaItem() returned 0")
 	}
 }
+
+func TestListPendingItems(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	id1, _ := s.UpsertMediaItem(ctx, "src", "url_list", "ext-1", "https://a", "one", "video", "fp1", "", nil)
+	id2, _ := s.UpsertMediaItem(ctx, "src", "url_list", "ext-2", "https://b", "two", "video", "fp2", "", nil)
+	id3, _ := s.UpsertMediaItem(ctx, "src", "url_list", "ext-3", "https://c", "three", "video", "fp3", "", nil)
+
+	// Giving item 2 a job removes it from the pending set (failed or published —
+	// any job row excludes it; retry --failed owns items that already failed).
+	if _, err := s.CreateJob(ctx, id2, "sync", "published"); err != nil {
+		t.Fatalf("CreateJob() error: %v", err)
+	}
+
+	got, err := s.ListPendingItems(ctx, 10)
+	if err != nil {
+		t.Fatalf("ListPendingItems() error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("ListPendingItems() len = %d, want 2", len(got))
+	}
+	// Insertion order, item 2 excluded.
+	if got[0].ID != id1 || got[1].ID != id3 {
+		t.Errorf("pending ids = [%d, %d], want [%d, %d]", got[0].ID, got[1].ID, id1, id3)
+	}
+	if got[0].ExternalID != "ext-1" {
+		t.Errorf("got[0].ExternalID = %q, want %q", got[0].ExternalID, "ext-1")
+	}
+
+	// LIMIT is honored.
+	one, err := s.ListPendingItems(ctx, 1)
+	if err != nil {
+		t.Fatalf("ListPendingItems(1) error: %v", err)
+	}
+	if len(one) != 1 || one[0].ID != id1 {
+		t.Errorf("ListPendingItems(1) = %d items, want 1 (id %d)", len(one), id1)
+	}
+}

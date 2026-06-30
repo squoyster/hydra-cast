@@ -60,21 +60,23 @@ func RunScrapeReels(ctx context.Context, cfg *config.Config, db *store.Store, op
 		}
 
 		item := source.MediaItem{
-			SourceName: opts.SourceName,
-			SourceType: "facebook_reels_unauth",
-			ExternalID: reelExternalID(u),
-			SourceURL:  u,
-			Title:      fmt.Sprintf("reel %s", reelExternalID(u)),
-			MediaType:  "video",
-			DetectedAt: time.Now(),
+			SourceName:  opts.SourceName,
+			SourceType:  "facebook_reels_unauth",
+			ExternalID:  reelExternalID(u),
+			SourceURL:   u,
+			Title:       fmt.Sprintf("reel %s", reelExternalID(u)),
+			MediaType:   "video",
+			DetectedAt:  time.Now(),
 			Fingerprint: "pending",
 		}
 
 		if db != nil {
-			if _, err := db.UpsertMediaItem(ctx, item.SourceName, item.SourceType, item.ExternalID, item.SourceURL, item.Title, item.MediaType, item.Fingerprint, "", nil); err != nil {
+			id, err := db.UpsertMediaItem(ctx, item.SourceName, item.SourceType, item.ExternalID, item.SourceURL, item.Title, item.MediaType, item.Fingerprint, "", nil)
+			if err != nil {
 				component.Warn("failed to upsert media item", "url", u, "error", err)
 				continue
 			}
+			item.ID = id
 		}
 
 		if err := ProcessItem(ctx, cfg, db, item, logger); err != nil {

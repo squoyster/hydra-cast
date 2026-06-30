@@ -15,10 +15,10 @@ Application orchestration. Runs the pipeline (scan → download → transform �
 
 ```dox
 R1 entry_points := {RunSync, RunScan, RetryFailed, SetupYouTubeAuth, ListJobs, ListEvents, CheckSecrets}.
-R2 RunSync sequence := cleanup_stale ∧ enforce_max_bytes → scanSources → [dry_run: showDryRunPlan] ∨ per_item(processItem) → PruneEvents.
-R3 processItem := CreateJob(download_pending) → download → per_transform(transform, delete_prior) → per_destination(publish) → UpdateJobStatus(published) → [¬keep_successful: DeleteMedia].
+R2 RunSync sequence := cleanup_stale ∧ enforce_max_bytes → scanSources (upsert new items, capture DB id onto item.ID, drain intake file) → [dry_run: showDryRunPlan] ∨ list_pending_items(MaxItemsPerRun) → per_item(processItem) → PruneEvents. The DB is the durable work queue; RunSync drains the oldest never-attempted items, NOT the just-scanned slice.
+R3 processItem := CreateJob(item.ID, download_pending) → download → per_transform(transform, delete_prior) → per_destination(publish) → UpdateJobStatus(published) → [¬keep_successful: DeleteMedia].
 R4 item_failure -> M log ∧ continue; F abort_sibling_items. (root R260)
-R5 max_items_per_run := hard ceiling on processItem invocations per RunSync.
+R5 max_items_per_run := the LIMIT passed to ListPendingItems; each run drains that many never-attempted items from the DB queue. Overflow stays pending for a later run (not orphaned); the intake file is drained on upsert regardless.
 R6 route_resolution := resolveTransforms ∧ resolveDestinations match cfg.Routes by route.Source == item.SourceName; honor *.Enabled == false.
 R7 dry_run -> F download ∧ F publish ∧ F db_mutation beyond UpsertMediaItem(scan path) ∧ F lock_bypass. (root R280/R281; see also scan path note below)
 R8 publish.Plugin selection := switch dstCfg.Type ∈ {youtube, facebook_page}; unknown_type -> Warn ∧ skip.
@@ -26,7 +26,7 @@ R9 job_status_terminal_values := {published, failed}; transient values per root 
 R10 ListJobs/ListEvents -> M honor --json flag ∧ --last N ∧ --failed filter.
 ```
 
-Note: `scanSources` currently emits a single placeholder `MediaItem` per enabled source (example-001) and is the integration point for real source plugins (root R153). `scanSources` writes to DB even in dry-run path via `UpsertMediaItem` — tracked as drift vs root R281; do not add new writes until resolved.
+Note: `scanSources` dispatches per source via `scanSource` (switch on `srcCfg.Type`): `url_list` is the first real plugin (reads a reels.json intake, `{items:[...]}` schema, `internal/source/urllist.go`); other types still emit the `example-001` placeholder. After upserting items it captures the DB id onto `item.ID` (so `processItem`'s `CreateJob` links the job to the media item — was `media_item_id=0`, a latent bug). A `url_list` source's intake file is then drained (`os.Remove`) gated on `!dryRun ∧ items>0` — items are already durable in `media_items`, so DB dedup (root R241) makes re-scans idempotent and `retry --failed` covers failures. RunSync then drains the DB pending queue (`ListPendingItems`, items with no job) rather than the just-scanned slice — so items beyond `max_items_per_run` are processed in a later run instead of being orphaned. `scanSources` still writes to DB even in dry-run via `UpsertMediaItem` (drift vs root R281); the file drain is the only scan-time side effect and is correctly dry-run-gated.
 
 ## Work Guidance
 

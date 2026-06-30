@@ -6,6 +6,7 @@ import (
 )
 
 type MediaItem struct {
+	ID          int64
 	SourceName  string
 	SourceType  string
 	ExternalID  string

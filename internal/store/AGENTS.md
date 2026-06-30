@@ -25,6 +25,7 @@ R8 PruneEvents(maxRetention) := DELETE rows not in top-N by id DESC. Called by R
 R9 GetFailedJobs := status ∈ {failed, retryable_failed}, ordered by id ASC.
 R10 F store(large_media_blobs ∨ resolved_secret_values). (root R245)
 R11 timestamps := RFC3339 strings (UTC), stored as TEXT.
+R12 ListPendingItems(ctx, limit) := SELECT media_items m WHERE NOT EXISTS(job row for m) ORDER BY m.id ASC LIMIT limit → []source.MediaItem (ID populated). "Pending" := never attempted (no job). Failed items excluded (they keep a job; owned by retry --failed). This is the durable work queue drained by RunSync. store imports source (leaf domain pkg; acyclic).
 ```
 
 ## Work Guidance
@@ -40,7 +41,7 @@ go vet ./internal/store
 go test ./internal/store
 ```
 
-Tests: `TestNewStore`, `TestMigrate`, `TestUpsertMediaItem` (incl. idempotency), `TestCreateJob`, `TestUpdateJobStatus`, `TestRecordEvent`, `TestPruneEvents`, `TestGetFailedJobs`, `TestUpsertMediaItemWithPublishedAt`. `newTestStore` helper builds a temp-file store + runs Migrate.
+Tests: `TestNewStore`, `TestMigrate`, `TestUpsertMediaItem` (incl. idempotency), `TestCreateJob`, `TestUpdateJobStatus`, `TestRecordEvent`, `TestPruneEvents`, `TestGetFailedJobs`, `TestUpsertMediaItemWithPublishedAt`, `TestListPendingItems` (no-job=pending, job excludes, LIMIT). `newTestStore` helper builds a temp-file store + runs Migrate.
 
 ## Child DOX Index
 

@@ -19,7 +19,7 @@ R2 ApplyDefaults := idempotent; called after every Load in cmd/hydracast.loadCon
 R3 default_db := /data/hydracast.db. default_work_dir := /data/work. default_cache_dir := /data/cache. (root R216/R217)
 R4 default_limits := {max_concurrent_jobs:1, max_items_per_run:3, max_working_bytes:5000MB, max_media_duration:4h, job_event_retention:1000}. (root R270/R274)
 R5 secrets_provider ∈ {openbao, files}.
-R6 known_source_types := {facebook_page_videos, youtube_channel, rss_feed, local_directory}. (root R231)
+R6 known_source_types := {url_list, facebook_page_videos, youtube_channel, rss_feed, local_directory}. (root R231)
 R7 known_transform_types := {ffmpeg}.
 R8 known_destination_types := {youtube, facebook_page}.
 R9 known_downloader_types := {yt_dlp}.

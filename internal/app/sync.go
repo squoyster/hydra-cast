@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/squoyster/hydracast/internal/config"
@@ -33,7 +35,7 @@ func RunSync(ctx context.Context, cfg *config.Config, db *store.Store, resolver 
 		component.Warn("failed to enforce max working bytes", "error", err)
 	}
 
-	items, err := scanSources(ctx, cfg, db, resolver, logger)
+	items, err := scanSources(ctx, cfg, db, resolver, logger, dryRun)
 	if err != nil {
 		return fmt.Errorf("scan sources: %w", err)
 	}
@@ -44,17 +46,19 @@ func RunSync(ctx context.Context, cfg *config.Config, db *store.Store, resolver 
 		return showDryRunPlan(cfg, items)
 	}
 
-	processed := 0
-	for _, item := range items {
-		if processed >= cfg.Limits.MaxItemsPerRun {
-			component.Info("max items per run reached", "limit", cfg.Limits.MaxItemsPerRun)
-			break
-		}
+	// The DB is the durable work queue: scans upsert new items, this drains the
+	// oldest never-attempted ones up to MaxItemsPerRun. Failed items keep their
+	// job (excluded here) and are owned by `retry --failed`. ponytail: no status
+	// column needed — "pending" := no job row exists for the media item.
+	pending, err := db.ListPendingItems(ctx, cfg.Limits.MaxItemsPerRun)
+	if err != nil {
+		return fmt.Errorf("list pending items: %w", err)
+	}
+	component.Info("processing pending items", "count", len(pending))
 
+	for _, item := range pending {
 		if err := ProcessItem(ctx, cfg, db, item, logger); err != nil {
 			component.Error("item failed", "item", item.Title, "error", err)
-		} else {
-			processed++
 		}
 	}
 
@@ -69,7 +73,7 @@ func RunSync(ctx context.Context, cfg *config.Config, db *store.Store, resolver 
 func RunScan(ctx context.Context, cfg *config.Config, db *store.Store, resolver *secrets.Resolver, logger *joblog.Logger, dryRun bool) error {
 	component := logger.WithComponent("scan")
 
-	items, err := scanSources(ctx, cfg, db, resolver, logger)
+	items, err := scanSources(ctx, cfg, db, resolver, logger, dryRun)
 	if err != nil {
 		return fmt.Errorf("scan sources: %w", err)
 	}
@@ -83,7 +87,7 @@ func RunScan(ctx context.Context, cfg *config.Config, db *store.Store, resolver 
 	return nil
 }
 
-func scanSources(ctx context.Context, cfg *config.Config, db *store.Store, resolver *secrets.Resolver, logger *joblog.Logger) ([]source.MediaItem, error) {
+func scanSources(ctx context.Context, cfg *config.Config, db *store.Store, resolver *secrets.Resolver, logger *joblog.Logger, dryRun bool) ([]source.MediaItem, error) {
 	var allItems []source.MediaItem
 
 	for _, srcCfg := range cfg.Sources {
@@ -93,7 +97,47 @@ func scanSources(ctx context.Context, cfg *config.Config, db *store.Store, resol
 
 		logger.Info("scanning source", "source", srcCfg.Name, "type", srcCfg.Type)
 
-		items := []source.MediaItem{
+		items, err := scanSource(ctx, srcCfg)
+		if err != nil {
+			logger.Warn("source scan failed", "source", srcCfg.Name, "error", err)
+			continue
+		}
+
+		for _, item := range items {
+			if db != nil {
+				id, err := db.UpsertMediaItem(ctx, item.SourceName, item.SourceType, item.ExternalID, item.SourceURL, item.Title, item.MediaType, item.Fingerprint, "", nil)
+				if err != nil {
+					logger.Warn("failed to upsert media item", "title", item.Title, "error", err)
+					continue
+				}
+				item.ID = id
+			}
+			allItems = append(allItems, item)
+		}
+
+		// Drain a url_list intake file once its items are consumed.
+		// ponytail: items are durable in media_items; DB dedup (root R241) makes a
+		// re-scan idempotent; failed items survive as job state for `retry --failed`.
+		// Gated on !dryRun (root R281: dry-run is side-effect-free).
+		if srcCfg.Type == "url_list" && !dryRun && len(items) > 0 && srcCfg.Path != "" {
+			if err := os.Remove(srcCfg.Path); err != nil && !errors.Is(err, os.ErrNotExist) {
+				logger.Warn("failed to remove intake file", "path", srcCfg.Path, "error", err)
+			}
+		}
+	}
+
+	return allItems, nil
+}
+
+// scanSource resolves a single source config to detected items.
+func scanSource(ctx context.Context, srcCfg config.SourceConfig) ([]source.MediaItem, error) {
+	switch srcCfg.Type {
+	case "url_list":
+		return source.NewURLList(srcCfg.Name, srcCfg.Path).Scan(ctx)
+	default:
+		// Other source types are not yet implemented; emit a placeholder so the
+		// downstream pipeline stays wired for integration testing.
+		return []source.MediaItem{
 			{
 				SourceName:  srcCfg.Name,
 				SourceType:  srcCfg.Type,
@@ -104,22 +148,8 @@ func scanSources(ctx context.Context, cfg *config.Config, db *store.Store, resol
 				DetectedAt:  time.Now(),
 				Fingerprint: "pending",
 			},
-		}
-
-		for _, item := range items {
-			if db != nil {
-				id, err := db.UpsertMediaItem(ctx, item.SourceName, item.SourceType, item.ExternalID, item.SourceURL, item.Title, item.MediaType, item.Fingerprint, "", nil)
-				if err != nil {
-					logger.Warn("failed to upsert media item", "title", item.Title, "error", err)
-					continue
-				}
-				_ = id
-			}
-			allItems = append(allItems, item)
-		}
+		}, nil
 	}
-
-	return allItems, nil
 }
 
 func ProcessItem(ctx context.Context, cfg *config.Config, db *store.Store, item source.MediaItem, logger *joblog.Logger) error {
@@ -127,7 +157,7 @@ func ProcessItem(ctx context.Context, cfg *config.Config, db *store.Store, item 
 
 	component.Info("processing item", "title", item.Title)
 
-	jobID, err := db.CreateJob(ctx, 0, "sync", "download_pending")
+	jobID, err := db.CreateJob(ctx, item.ID, "sync", "download_pending")
 	if err != nil {
 		return fmt.Errorf("create job: %w", err)
 	}

@@ -44,11 +44,22 @@ downloaders:
     format: "bv*+ba/b"
 
 sources:
-  - name: dkmc-facebook
-    type: facebook_page_videos
-    url: "https://www.facebook.com/DKMCYoga/videos"
+  # url_list: hydracast-mac-playwright (or any compatible collector) writes a
+  # reels.json intake; each scheduled run reads it, processes new items (DB
+  # dedups repeats by source_name + external_id), and deletes the file.
+  # Missing/empty file = idle run. Schema: {"items":[{"url","external_id",
+  # "url_sha256","first_seen_in_run_at"}], ...}.
+  - name: intake
+    type: url_list
+    path: /data/reels.json
     downloader: yt_dlp
     enabled: true
+  # Facebook page scraper (needs cookies; placeholder stub, disabled).
+  # - name: dkmc-facebook
+  #   type: facebook_page_videos
+  #   url: "https://www.facebook.com/DKMCYoga/videos"
+  #   downloader: yt_dlp
+  #   enabled: false
 
 transforms:
   - name: youtube-default

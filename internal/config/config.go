@@ -143,6 +143,7 @@ type SourceConfig struct {
 	Name       string `yaml:"name"`
 	Type       string `yaml:"type"`
 	URL        string `yaml:"url"`
+	Path       string `yaml:"path"`
 	Downloader string `yaml:"downloader"`
 	Enabled    bool   `yaml:"enabled"`
 }
@@ -246,5 +247,10 @@ func ApplyDefaults(cfg *Config) {
 	}
 	if cfg.Downloaders.YtDlp.Format == "" {
 		cfg.Downloaders.YtDlp.Format = "bv*+ba/b"
+	}
+	for i := range cfg.Sources {
+		if cfg.Sources[i].Type == "url_list" && cfg.Sources[i].Path == "" {
+			cfg.Sources[i].Path = "/data/reels.json"
+		}
 	}
 }

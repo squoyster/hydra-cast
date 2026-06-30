@@ -8,6 +8,8 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"github.com/squoyster/hydracast/internal/source"
 )
 
 //go:embed migrations/*.sql
@@ -139,6 +141,42 @@ func (s *Store) PruneEvents(ctx context.Context, maxRetention int) error {
 		maxRetention,
 	)
 	return err
+}
+
+// ListPendingItems returns up to limit media_items that have no job yet (never
+// attempted), in insertion order. Items with a job (published or failed) are
+// excluded — failed items are owned by `retry --failed`. This is the durable
+// work queue: a scan upserts items, later runs drain them here.
+func (s *Store) ListPendingItems(ctx context.Context, limit int) ([]source.MediaItem, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT m.id, m.source_name, m.source_type, m.external_id, m.source_url, m.title, m.media_type, m.detected_at, m.fingerprint, m.raw_metadata_json
+		 FROM media_items m
+		 WHERE NOT EXISTS (SELECT 1 FROM jobs j WHERE j.media_item_id = m.id)
+		 ORDER BY m.id ASC
+		 LIMIT ?`,
+		limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query pending items: %w", err)
+	}
+	defer rows.Close()
+
+	var items []source.MediaItem
+	for rows.Next() {
+		var m source.MediaItem
+		var detectedAt string
+		var title, rawMetadata sql.NullString
+		if err := rows.Scan(&m.ID, &m.SourceName, &m.SourceType, &m.ExternalID, &m.SourceURL, &title, &m.MediaType, &detectedAt, &m.Fingerprint, &rawMetadata); err != nil {
+			return nil, fmt.Errorf("scan pending item: %w", err)
+		}
+		m.Title = title.String
+		m.RawMetadata = rawMetadata.String
+		if t, err := time.Parse(time.RFC3339, detectedAt); err == nil {
+			m.DetectedAt = t
+		}
+		items = append(items, m)
+	}
+	return items, nil
 }
 
 func (s *Store) GetFailedJobs(ctx context.Context) ([]FailedJob, error) {

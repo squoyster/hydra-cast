@@ -11,6 +11,7 @@ var knownSourceTypes = map[string]bool{
 	"youtube_channel":      true,
 	"rss_feed":             true,
 	"local_directory":      true,
+	"url_list":             true,
 }
 
 var knownDownloaderTypes = map[string]bool{

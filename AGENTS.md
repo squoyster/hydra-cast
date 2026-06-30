@@ -156,7 +156,7 @@ R224 cookie_data -> M materialize_into_temp_files(download_duration_only) ∧ M 
 ```dox
 R230 pipeline := source → downloader → transformer → destination. compiled_in(¬dynamic).
 R231 initial_plugins := {
-  sources: {facebook_page_videos, youtube_channel, rss_feed, local_directory},
+  sources: {url_list, facebook_page_videos, youtube_channel, rss_feed, local_directory},
   downloader: {yt_dlp},
   transformer: {ffmpeg},
   destinations: {youtube, facebook_page}
